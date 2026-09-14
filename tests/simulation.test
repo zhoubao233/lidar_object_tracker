@@ -1,0 +1,9 @@
+<launch>
+ <include file="$(find lidar_object_tracker)/launch/simulation.launch">
+  <arg name="rviz" value="false"/><arg name="lidar_topic" value="/migration/raw"/><arg name="odom_topic" value="/migration/pose"/>
+  <arg name="lidar_translation" value="[0,0,0]"/><arg name="lidar_quaternion" value="[0,0,0,1]"/>
+ </include>
+ <test test-name="simulation_pipeline" pkg="lidar_object_tracker" type="pipeline_check" time-limit="35">
+  <param name="real" value="false"/>
+ </test>
+</launch>

@@ -1,0 +1,23 @@
+<launch>
+  <arg name="rviz" default="true" />
+  <arg name="lidar_topic" default="/livox/lidar" />
+  <arg name="odom_topic" default="/mavros/local_position/odom" />
+  <arg name="lidar_translation" default="[0.0, 0.0, 0.235077]" />
+  <arg name="lidar_quaternion" default="[0.0, 0.0, 0.0, 1.0]" />
+  <arg name="max_points" default="30000" />
+  <arg name="config_file" default="$(find lidar_object_tracker)/config/tracking.yaml" />
+  <arg name="max_dt" default="0.05" />
+  <include file="$(find lidar_object_tracker)/launch/livox_mavros.launch">
+    <arg name="lidar_topic" value="$(arg lidar_topic)" />
+    <arg name="odom_topic" value="$(arg odom_topic)" />
+    <arg name="lidar_translation" value="$(arg lidar_translation)" />
+    <arg name="lidar_quaternion" value="$(arg lidar_quaternion)" />
+    <arg name="max_points" value="$(arg max_points)" />
+    <arg name="max_dt" value="$(arg max_dt)" />
+  </include>
+  <include file="$(find lidar_object_tracker)/launch/tracker.launch">
+    <arg name="rviz" value="$(arg rviz)" />
+    <arg name="config_file" value="$(arg config_file)" />
+  </include>
+</launch>
+

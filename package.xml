@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="2">
+ <name>lidar_object_tracker</name><version>0.2.0</version>
+ <description>C++ LiDAR object tracking and Livox odometry compensation.</description>
+ <maintainer email="maintainer@example.com">lidar_object_tracker maintainers</maintainer>
+ <license>GPL-2.0 (migrated files; see NOTICE.md)</license>
+ <license>GPL-3.0 (existing repository license)</license>
+ <buildtool_depend>catkin</buildtool_depend>
+ <depend>roscpp</depend><depend>roslib</depend><depend>sensor_msgs</depend><depend>nav_msgs</depend>
+ <depend>std_msgs</depend><depend>geometry_msgs</depend><depend>visualization_msgs</depend>
+ <depend>livox_ros_driver2</depend><depend>rosbag</depend><depend>gazebo_msgs</depend>
+ <depend>eigen</depend><depend>libpcl-all-dev</depend><depend>libjsoncpp-dev</depend><depend>yaml-cpp</depend>
+ <exec_depend>rviz</exec_depend><test_depend>rostest</test_depend>
+</package>

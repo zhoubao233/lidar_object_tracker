@@ -1,0 +1,21 @@
+<launch>
+  <arg name="max_dt" default="0.05" />
+  <arg name="lidar_topic" default="/livox/lidar" />
+  <arg name="odom_topic" default="/mavros/local_position/odom" />
+  <arg name="lidar_translation" default="[0.0, 0.0, 0.235077]" />
+  <arg name="lidar_quaternion" default="[0.0, 0.0, 0.0, 1.0]" />
+  <arg name="max_points" default="30000" />
+  <group ns="lidar_object_tracker">
+    <node pkg="lidar_object_tracker" type="livox_to_body" name="adapter" output="screen" required="true">
+      <param name="lidar_topic" value="$(arg lidar_topic)" />
+      <param name="odom_topic" value="$(arg odom_topic)" />
+      <param name="max_dt" value="$(arg max_dt)" />
+      <param name="world_frame" value="map" />
+      <param name="body_frame" value="base_link" />
+      <rosparam param="lidar_translation" subst_value="true">$(arg lidar_translation)</rosparam>
+      <rosparam param="lidar_quaternion" subst_value="true">$(arg lidar_quaternion)</rosparam>
+      <param name="max_points" value="$(arg max_points)" />
+    </node>
+  </group>
+</launch>
+

@@ -1,0 +1,77 @@
+# 显示配置，不参与算法。Fixed Frame 可由启动时 rviz -f 参数覆盖。
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Global Options:
+    Fixed Frame: map
+    Background Color: 20; 20; 20
+    Frame Rate: 30
+  Displays:
+    - Class: rviz/Grid
+      Name: Grid
+      Enabled: true
+      Plane: XY
+      Cell Size: 1
+    # 灰色是当前帧未标运动的点，不等于所有点已被证明静止。
+    - Class: rviz/PointCloud2
+      Name: Current background
+      Enabled: true
+      Topic: /lidar_object_tracker/background
+      Queue Size: 1
+      Position Transformer: XYZ
+      Color Transformer: FlatColor
+      Color: 150; 150; 150
+      Style: Points
+      Size (Pixels): 3
+      Alpha: 1
+      Decay Time: 0
+    # 红色点属于当前有观测、且轨迹状态为 MOVING 的候选簇。
+    - Class: rviz/PointCloud2
+      Name: Moving object points
+      Enabled: true
+      Topic: /lidar_object_tracker/dynamic
+      Queue Size: 1
+      Position Transformer: XYZ
+      Color Transformer: FlatColor
+      Color: 255; 40; 40
+      Style: Points
+      Size (Pixels): 5
+      Alpha: 1
+      Decay Time: 0
+    - Class: rviz/PointCloud2
+      Name: Uncertain object points
+      Enabled: false
+      Topic: /lidar_object_tracker/uncertain
+      Queue Size: 1
+      Position Transformer: XYZ
+      Color Transformer: FlatColor
+      Color: 255; 210; 20
+      Style: Points
+      Size (Pixels): 4
+      Alpha: 1
+      Decay Time: 0
+    # 框、ID、状态和速度箭头由 object_tracker.py/markers 生成。
+    - Class: rviz/MarkerArray
+      Name: Object IDs - state - speed
+      Enabled: true
+      Marker Topic: /lidar_object_tracker/markers
+      Queue Size: 1
+  Tools:
+    - Class: rviz/Interact
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 12
+      Focal Point:
+        X: 0
+        Y: 4
+        Z: 0.4
+      Pitch: 0.6
+      Yaw: 0.85
+Window Geometry:
+  Width: 1400
+  Height: 900

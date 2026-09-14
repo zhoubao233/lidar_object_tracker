@@ -1,0 +1,15 @@
+<launch>
+  <arg name="rviz" default="true" />
+  <arg name="world_frame" default="map" />
+  <arg name="cloud_topic" default="/lidar_object_tracker/input/cloud_body" />
+  <arg name="odom_topic" default="/lidar_object_tracker/input/odom" />
+  <arg name="config_file" default="$(find lidar_object_tracker)/config/tracking.yaml" />
+  <node pkg="lidar_object_tracker" type="object_tracker" name="lidar_object_tracker" output="screen" required="true">
+    <rosparam command="load" file="$(arg config_file)" />
+    <param name="world_frame" value="$(arg world_frame)" />
+    <param name="cloud_topic" value="$(arg cloud_topic)" />
+    <param name="odom_topic" value="$(arg odom_topic)" />
+  </node>
+  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="lidar_object_tracker_view" args="-d $(find lidar_object_tracker)/rviz/tracking.rviz -f $(arg world_frame)" />
+</launch>
+

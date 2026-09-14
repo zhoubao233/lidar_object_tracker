@@ -1,0 +1,31 @@
+<launch>
+  <arg name="max_scan_duration" default="0.15" />
+  <arg name="max_odom_gap" default="0.1" />
+  <arg name="max_wait" default="0.5" />
+  <arg name="max_input_age" default="1.0" />
+  <arg name="lidar_time_offset" default="0.0" />
+  <arg name="lidar_frame" default="livox_frame" />
+  <arg name="max_points" default="30000" />
+  <arg name="lidar_topic" default="/livox/lidar" />
+  <arg name="odom_topic" default="/mavros/local_position/odom" />
+  <arg name="lidar_translation" />
+  <arg name="lidar_quaternion" />
+  <group ns="lidar_object_tracker">
+    <node pkg="lidar_object_tracker" type="livox_real_to_body" name="adapter" output="screen" required="true">
+      <param name="lidar_topic" value="$(arg lidar_topic)" />
+      <param name="odom_topic" value="$(arg odom_topic)" />
+      <param name="max_scan_duration" value="$(arg max_scan_duration)" />
+      <param name="max_odom_gap" value="$(arg max_odom_gap)" />
+      <param name="max_wait" value="$(arg max_wait)" />
+      <param name="max_input_age" value="$(arg max_input_age)" />
+      <param name="lidar_time_offset" value="$(arg lidar_time_offset)" />
+      <param name="lidar_frame" value="$(arg lidar_frame)" />
+      <param name="max_points" value="$(arg max_points)" />
+      <param name="world_frame" value="map" />
+      <param name="body_frame" value="base_link" />
+      <rosparam param="lidar_translation" subst_value="true">$(arg lidar_translation)</rosparam>
+      <rosparam param="lidar_quaternion" subst_value="true">$(arg lidar_quaternion)</rosparam>
+    </node>
+  </group>
+</launch>
+

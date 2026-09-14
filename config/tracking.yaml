@@ -1,0 +1,20 @@
+# 独立物体跟踪参数：距离单位 m，时间单位 s，速度单位 m/s。
+# 这里只覆盖 tracking_core.py/DEFAULTS 中的一部分参数，修改后重启跟踪节点生效。
+# 算法不读取 Gazebo 模型真值。
+tracking:
+  voxel_size: 0.10          # 局部体素均值点的间距。
+  cluster_distance: 0.32    # 两个均值点的连边距离，过大容易合并邻近物体。
+  min_cluster_points: 18    # 一个候选簇至少包含的原始点数，不是体素数。
+  max_cluster_size: 5.0     # 候选簇可见包围框最长边上限。
+  max_range: 25.0           # 只分组观察者 body 原点周围此范围内的点。
+  object_min_height: 0.13   # 体素均值点到拟合地面的法向距离下限，抑制贴地点。
+  ground_distance: 0.10     # 拟合地面时判为平面内点的距离容差。
+  moving_speed: 0.25        # 新运动证据所需最低估计速度，还须通过几何检查。
+  static_speed: 0.12        # 静止证据的速度上限；与 moving_speed 留有不确定区间。
+  motion_window: 0.55       # 速度与表面对齐的观察窗口，代码额外容纳 0.11 s 采样间隔。
+  min_observation_time: 0.4 # 观察时间至少达到该值，且窗口至少 4 帧，才判断状态。
+  moving_confirm: 2        # 连续几次满足新运动证据，才进入 MOVING。
+  static_confirm_seconds: 0.7 # 连续静止证据保持多久，才进入 STATIC。
+  max_missed_seconds: 0.5   # 本帧找不到目标时，最多保留多久的预测轨迹。
+  registration_overlap: 0.65 # 对齐后双向近邻距离落在容差内的比例下限。
+  registration_gain: 0.018  # 对齐使 P80 误差至少改善多少；不是物体位移下限。
