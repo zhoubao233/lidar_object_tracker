@@ -2,7 +2,7 @@
 set -eo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
-  echo './run.sh [input_source:=livox_mavros|livox_mavros_real] [rviz:=true] [launch arguments]'
+  echo './run.sh [input_source:=livox_mavros|livox_mavros_real|mission_auto_avoid] [rviz:=true] [launch arguments]'
   echo 'Real mode requires lidar_translation and lidar_quaternion. Start Livox and MAVROS separately.'
   exit 0
 fi
@@ -12,7 +12,7 @@ ARGS=()
 for arg in "$@"; do
   case "$arg" in input_source:=*) MODE="${arg#input_source:=}" ;; *) ARGS+=("$arg") ;; esac
 done
-case "$MODE" in livox_mavros) LAUNCH=simulation.launch ;; livox_mavros_real) LAUNCH=real.launch ;; *) echo "Invalid input_source: $MODE" >&2; exit 1 ;; esac
+case "$MODE" in mission_auto_avoid) LAUNCH=mission_auto_avoid.launch ;; livox_mavros) LAUNCH=simulation.launch ;; livox_mavros_real) LAUNCH=real.launch ;; *) echo "Invalid input_source: $MODE" >&2; exit 1 ;; esac
 if [[ -n "${LIVOX_DRIVER_SETUP:-}" ]]; then
   source "$LIVOX_DRIVER_SETUP" --extend
 else

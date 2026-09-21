@@ -19,6 +19,7 @@ Config defaultConfig() {
   return {{"max_range", 25},
           {"voxel_size", .1},
           {"cluster_distance", .32},
+          {"column_distance", 0},
           {"min_cluster_points", 18},
           {"max_cluster_size", 5},
           {"max_objects", 80},
@@ -27,8 +28,11 @@ Config defaultConfig() {
           {"ground_min_points", 60},
           {"ground_trials", 64},
           {"ground_cache_seconds", .5},
+          {"allow_groundless", 0},
           {"history_seconds", 1.4},
           {"motion_window", .55},
+          {"motion_vertical_tolerance", 0},
+          {"shape_horizontal_only", 0},
           {"min_observation_time", .4},
           {"moving_speed", .25},
           {"static_speed", .12},
@@ -52,9 +56,20 @@ Config validatedConfig(const Config& overrides) {
       throw std::invalid_argument("unknown tracker parameter: " + kv.first);
     c[kv.first] = kv.second;
   }
-  for (const auto& kv : c)
-    if (!std::isfinite(kv.second) || kv.second <= 0)
+  for (const auto& kv : c) {
+    if (!std::isfinite(kv.second))
+      throw std::invalid_argument("parameter must be finite: " + kv.first);
+    if (kv.first == "allow_groundless" || kv.first == "shape_horizontal_only") {
+      if (kv.second != 0 && kv.second != 1)
+        throw std::invalid_argument("parameter must be 0 or 1: " + kv.first);
+    } else if (kv.first == "column_distance" || kv.first == "motion_vertical_tolerance") {
+      // 0 表示关闭该层处理（与旧行为一致），因此允许取 0。
+      if (kv.second < 0)
+        throw std::invalid_argument("parameter must not be negative: " + kv.first);
+    } else if (kv.second <= 0) {
       throw std::invalid_argument("parameter must be positive and finite: " + kv.first);
+    }
+  }
   if (c.at("static_speed") >= c.at("moving_speed"))
     throw std::invalid_argument("static_speed must be below moving_speed");
   for (const auto& key :
@@ -349,7 +364,7 @@ bool ObjectTracker::estimateGround(const Cloud& p, const Vec& origin, double sta
   return stamp - ground_stamp_ <= c_.at("ground_cache_seconds");
 }
 std::pair<std::vector<Detection>, bool> ObjectTracker::segment(const Cloud& p, const Vec& origin,
-                                                               double stamp) {
+                                                               double stamp, Result& result) {
   Cloud valid;
   std::vector<size_t> raw;
   for (size_t i = 0; i < p.size(); ++i)
@@ -357,21 +372,35 @@ std::pair<std::vector<Detection>, bool> ObjectTracker::segment(const Cloud& p, c
       valid.push_back(p[i]);
       raw.push_back(i);
     }
-  if (valid.size() < c_.at("ground_min_points"))
+  // Empty/invalid input is not evidence that the scene is clear.
+  if (std::none_of(p.begin(), p.end(), [](const Vec& x) { return x.allFinite(); }))
     return {{}, false};
   auto vox = voxelize(valid, c_.at("voxel_size"));
-  if (!estimateGround(vox.points, origin, stamp))
+  const bool ground = valid.size() >= c_.at("ground_min_points") &&
+                      estimateGround(vox.points, origin, stamp);
+  result.ground_valid = ground;
+  if (!ground && !c_.at("allow_groundless"))
     return {{}, false};
+  result.segmentation_valid = true;
+  result.segmentation_mode = ground ? "ground_filtered" : "unfiltered";
   Cloud obs;
   std::vector<int> foreground;
   for (size_t i = 0; i < vox.points.size(); ++i)
-    if (ground_normal_.dot(vox.points[i]) + ground_offset_ > c_.at("object_min_height")) {
+    if (!ground || ground_normal_.dot(vox.points[i]) + ground_offset_ > c_.at("object_min_height")) {
       obs.push_back(vox.points[i]);
       foreground.push_back(i);
     }
   if (obs.empty())
     return {{}, true};
   Neighbors tree(obs);
+  const double horizontal = c_.at("cluster_distance");
+  const double vertical = c_.at("column_distance");
+  // vertical <= horizontal 时保持原来的各向同性球邻域（column_distance 默认 0）。
+  // 更大时改用水平/竖直分离的柱状邻域：竖直方向只能看到物体侧面，采样本身就稀疏，
+  // 相邻扫描线在竖直面上的间距随距离和仰角按 d/cos^2 增长，固定球邻域会把同一根
+  // 柱体切成上下多段；柱状邻域只要求水平足迹相连，从而把它们连回一个目标。
+  const bool column = vertical > horizontal;
+  const double search = column ? std::hypot(horizontal, vertical) : horizontal;
   std::vector<int> labels(obs.size(), -1);
   int count = 0;
   for (size_t i = 0; i < obs.size(); ++i)
@@ -379,32 +408,43 @@ std::pair<std::vector<Detection>, bool> ObjectTracker::segment(const Cloud& p, c
       std::vector<int> queue{int(i)};
       labels[i] = count;
       for (size_t head = 0; head < queue.size(); ++head)
-        for (int j : tree.radius(obs[queue[head]], c_.at("cluster_distance")))
-          if (labels[j] < 0) {
-            labels[j] = count;
-            queue.push_back(j);
-          }
+        for (int j : tree.radius(obs[queue[head]], search)) {
+          if (labels[j] >= 0)
+            continue;
+          const Vec delta = obs[j] - obs[queue[head]];
+          if (column && (delta.head<2>().norm() > horizontal || std::abs(delta.z()) > vertical))
+            continue;
+          labels[j] = count;
+          queue.push_back(j);
+        }
       ++count;
     }
   std::vector<int> voxel_labels(vox.points.size(), -1);
   for (size_t i = 0; i < obs.size(); ++i)
     voxel_labels[foreground[i]] = labels[i];
   std::vector<Detection> grouped(count);
+  std::vector<Vec> sum(count, Vec::Zero());
   for (size_t i = 0; i < valid.size(); ++i) {
     int label = voxel_labels[vox.inverse[i]];
-    if (label >= 0)
+    if (label >= 0) {
       grouped[label].indices.push_back(raw[i]);
+      sum[label] += valid[i];
+    }
   }
   for (size_t i = 0; i < obs.size(); ++i)
     grouped[labels[i]].points.push_back(obs[i]);
   std::vector<Detection> out;
-  for (auto& d : grouped) {
+  for (size_t g = 0; g < grouped.size(); ++g) {
+    auto& d = grouped[g];
     if (d.indices.size() < c_.at("min_cluster_points"))
       continue;
     d.lower = quantile(d.points, .02);
     d.upper = quantile(d.points, .98);
     d.size = d.upper - d.lower;
-    if (d.size.maxCoeff() > c_.at("max_cluster_size") || d.size.norm() < .15)
+    d.centroid = sum[g] / double(d.indices.size());
+    // "过大"只按水平尺寸判断：竖直方向只能看到物体侧面，高度本来就不完整，
+    // 不能因为高就把整根柱体丢掉；地面、长墙这类真正的大范围结构在水平方向上仍然超限。
+    if (d.size.head<2>().maxCoeff() > c_.at("max_cluster_size") || d.size.norm() < .15)
       continue;
     d.center = (d.lower + d.upper) / 2;
     d.points = sampleCloud(d.points, c_.at("registration_points"));
@@ -420,7 +460,7 @@ std::pair<std::vector<Detection>, bool> ObjectTracker::segment(const Cloud& p, c
 void ObjectTracker::update(Track& t, const Detection& d, double stamp) {
   t.detection = d;
   t.last_seen = stamp;
-  t.history.push_back({stamp, d.center, d.points, d.size});
+  t.history.push_back({stamp, d.center, d.centroid, d.points, d.size});
   while (stamp - t.history.front().stamp > c_.at("history_seconds"))
     t.history.pop_front();
   std::vector<const Observation*> window;
@@ -431,22 +471,42 @@ void ObjectTracker::update(Track& t, const Detection& d, double stamp) {
     t.state = "UNKNOWN";
     return;
   }
+  // 速度用簇质心差分：包围盒中点会随"看到哪几个面/看到多高"整体平移，侧面进出视野时
+  // 实测能造出 ~1 m/s 的假侧向速度；质心对这种可见性变化不敏感得多。
   Cloud slopes;
   for (size_t i = 0; i < window.size(); ++i)
     for (size_t j = i + 1; j < window.size(); ++j) {
       double dt = window[j]->stamp - window[i]->stamp;
       if (dt >= .2)
-        slopes.push_back((window[j]->center - window[i]->center) / dt);
+        slopes.push_back((window[j]->centroid - window[i]->centroid) / dt);
     }
   if (slopes.empty()) {
     t.state = "UNKNOWN";
     return;
   }
   t.velocity = quantile(slopes, .5);
+  // 纵向单独判断：整个窗口里可见高度变化超过 tolerance，说明只看到物体的一部分，
+  // 质心的 z 只是"可见部分"的中心，会随可见范围整体漂移（实测假纵向速度可达 ±3 m/s，
+  // 会让预测胶囊的未来位置上下漂 6 m）。此时纵向速度给 0，不用可见性变化伪造纵向运动；
+  // 横向速度与状态判定完全不受影响。motion_vertical_tolerance <= 0 表示不做这层处理。
+  const double vertical_tolerance = c_.at("motion_vertical_tolerance");
+  if (vertical_tolerance > 0) {
+    double extent_change = 0;
+    for (const auto* h : window)
+      extent_change = std::max(extent_change, std::abs(h->size.z() - window.front()->size.z()));
+    if (extent_change > vertical_tolerance)
+      t.velocity.z() = 0.;
+  }
   auto& anchor = *window.front();
   auto e = alignmentEvidence(anchor.points, d.points, d.center - anchor.center,
                              c_.at("registration_distance"));
-  double shape = (d.size - anchor.size).norm(), speed = t.velocity.norm();
+  // 竖直方向的可见范围会随"只看到物体的哪一部分"剧烈波动，把三维尺寸差当形状判据会让高目标
+  // 永远拿不到运动证据（实测 20 m 高柱 86% 的帧被判 UNKNOWN、拿不到预测）。shape_horizontal_only=1
+  // 时运动证据只看水平尺寸，纵向的可见性波动交给上面的 motion_vertical_tolerance 处理。
+  const Vec size_change = d.size - anchor.size;
+  const double shape = c_.at("shape_horizontal_only") > 0 ? size_change.head<2>().norm()
+                                                          : size_change.norm();
+  const double speed = t.velocity.norm();
   bool geometry = e["overlap"].asDouble() >= c_.at("registration_overlap") &&
                   e["error"].asDouble() < c_.at("registration_distance") && shape < .65;
   bool moving = geometry && speed >= c_.at("moving_speed") && speed <= c_.at("max_speed") &&
@@ -497,9 +557,8 @@ Result ObjectTracker::process(const Cloud& p, const Vec& origin, double stamp) {
   }
   previous_stamp_ = stamp;
   previous_origin_ = origin;
-  auto segmented = segment(p, origin, stamp);
+  auto segmented = segment(p, origin, stamp, out);
   auto& detections = segmented.first;
-  out.ground_valid = segmented.second;
   tracks_.erase(std::remove_if(tracks_.begin(), tracks_.end(),
                                [&](const Track& t) {
                                  return stamp - t.last_seen > c_.at("max_missed_seconds");
@@ -512,8 +571,10 @@ Result ObjectTracker::process(const Cloud& p, const Vec& origin, double stamp) {
     double dt = stamp - t.last_seen;
     Vec predicted = t.detection.center + t.velocity * dt;
     for (size_t j = 0; j < detections.size(); ++j) {
+      const Vec track_size_change = t.detection.size - detections[j].size;
       double distance = (predicted - detections[j].center).norm(),
-             shape = (t.detection.size - detections[j].size).norm();
+             shape = c_.at("shape_horizontal_only") > 0 ? track_size_change.head<2>().norm()
+                                                        : track_size_change.norm();
       if (distance < c_.at("association_distance") + .5 * c_.at("max_speed") * dt && shape < .85)
         costs[i][j] = distance + .35 * shape;
     }
@@ -532,14 +593,16 @@ Result ObjectTracker::process(const Cloud& p, const Vec& origin, double stamp) {
       tracks_.push_back(std::move(t));
     }
   out.dynamic.resize(p.size());
+  out.moving_owner.resize(p.size());
   out.uncertain.resize(p.size());
   for (const auto& t : tracks_) {
     bool observed = t.last_seen == stamp;
     if (observed)
       for (auto i : t.detection.indices) {
-        if (t.state == "MOVING")
+        if (t.state == "MOVING") out.moving_owner[i] = t.id;
+        if (t.state == "MOVING" && out.ground_valid)
           out.dynamic[i] = 1;
-        else if (t.state == "UNKNOWN")
+        else if (t.state == "UNKNOWN" || !out.ground_valid)
           out.uncertain[i] = 1;
       }
     Json::Value o(Json::objectValue);

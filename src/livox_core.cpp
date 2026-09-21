@@ -83,7 +83,7 @@ Deskewed deskew(const Cloud& p, const std::vector<int64_t>& times,
 }
 sensor_msgs::PointCloud2 convertLivox(const livox_ros_driver2::CustomMsg& msg, const Extrinsic& e,
                                       const std::string& body, int max_points, double min_range) {
-  if (msg.point_num != msg.points.size() || msg.points.empty())
+  if (msg.point_num != msg.points.size() || msg.points.size() > size_t(max_points))
     throw std::invalid_argument("empty scan or point count mismatch");
   Cloud points;
   std::vector<float> reflectivity;
@@ -96,7 +96,7 @@ sensor_msgs::PointCloud2 convertLivox(const livox_ros_driver2::CustomMsg& msg, c
       reflectivity.push_back(p.reflectivity);
     }
   }
-  if (points.empty() || points.size() > size_t(max_points))
+  if (points.size() > size_t(max_points))
     throw std::invalid_argument("no valid returns or max_points exceeded");
   std_msgs::Header h = msg.header;
   h.frame_id = body;

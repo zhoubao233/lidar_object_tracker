@@ -1,0 +1,62 @@
+// Render with Graphviz and a Chinese font installed:
+// dot -Tpng real-dynamic-avoidance-flow.dot -o real-dynamic-avoidance-flow.png
+digraph DynamicAvoidance {
+  graph [rankdir=TB, bgcolor="white", pad=0.32, nodesep=0.42,
+         ranksep=0.42, splines=polyline, dpi=140, outputorder=edgesfirst];
+  node [shape=box, style="rounded,filled", fontname="Microsoft YaHei",
+        fontsize=14, margin="0.20,0.13", penwidth=1.2,
+        color="#8CA2B8", fillcolor="#F1F5F9", fontcolor="#172B4D"];
+  edge [color="#64748B", penwidth=1.3, arrowsize=0.7,
+        fontname="Microsoft YaHei", fontsize=11, fontcolor="#475569"];
+
+  A [label="真实 Livox 雷达"];
+  B [label="真实定位与\nMAVROS 里程计"];
+  C [label="已有：输入补偿\n扫描时间检查、外参变换、逐点去畸变",
+     color="#5B9D81", fillcolor="#EAF6EF"];
+  D [label="已有：世界坐标物体跟踪",
+     color="#5B9D81", fillcolor="#EAF6EF"];
+  E [label="未完成：运动预测\n与目标生命周期管理",
+     color="#CA9843", fillcolor="#FFF3DA"];
+  F [label="未完成：EGO 动态轨迹适配",
+     color="#CA9843", fillcolor="#FFF3DA"];
+  G [label="未完成：点云分流策略\n静态、动态、不确定点",
+     color="#CA9843", fillcolor="#FFF3DA"];
+  H [label="已有：EGO 局部占据地图",
+     color="#5B9D81", fillcolor="#EAF6EF"];
+  I [label="已有：EGO 时空避碰\n与滚动规划",
+     color="#5B9D81", fillcolor="#EAF6EF"];
+  J [label="已有：目标输入\nRViz 目标或 FullGuided 航点",
+     color="#5B9D81", fillcolor="#EAF6EF"];
+  K [label="已有：traj_server 轨迹采样",
+     color="#5B9D81", fillcolor="#EAF6EF"];
+  L [label="已有：飞控控制桥\nPositionCommand → MAVROS 控制目标",
+     color="#5B9D81", fillcolor="#EAF6EF"];
+  M [label="真实 ArduPilot 与无人机执行"];
+  N [label="未完成：系统输入健康\n与控制权联动",
+     color="#CA9843", fillcolor="#FFF3DA"];
+
+  { rank=same; A; B; }
+  { rank=same; E; G; N; }
+  { rank=same; F; H; }
+  { rank=same; I; J; }
+
+  A -> C;
+  B -> C;
+  C -> D;
+  D -> E;
+  D -> G;
+  E -> F;
+  G -> H;
+  F -> I;
+  H -> I;
+  J -> I;
+  B -> I [constraint=false, color="#8497AC"];
+  I -> K;
+  K -> L;
+  L -> M;
+  M:w -> A:w [constraint=false, color="#8497AC"];
+  M:e -> B:e [constraint=false, color="#8497AC"];
+  N -> E [style=dashed, color="#B78735", constraint=false];
+  N -> I [style=dashed, color="#B78735", constraint=false];
+  N -> L [style=dashed, color="#B78735", constraint=false];
+}

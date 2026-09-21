@@ -14,6 +14,7 @@ TEST(Pipeline, RawScanThroughAdapterAndTracker) {
   std::vector<Json::Value> reports;
   std::map<uint64_t, sensor_msgs::PointCloud2> clouds;
   std::map<uint64_t, nav_msgs::Odometry> poses;
+  std::map<uint64_t, size_t> full_counts, background_counts, dynamic_counts;
   std::set<uint64_t> dynamic_stamps;
   size_t moving_points = 0;
   auto sub = nh.subscribe<std_msgs::String>(
@@ -31,6 +32,15 @@ TEST(Pipeline, RawScanThroughAdapterAndTracker) {
         dynamic_stamps.insert(m->header.stamp.toNSec());
         moving_points += m->width;
       });
+  auto full_sub = nh.subscribe<sensor_msgs::PointCloud2>("/lidar_object_tracker/full", 30,
+      [&](const sensor_msgs::PointCloud2ConstPtr& m) {
+        EXPECT_EQ("map", m->header.frame_id);
+        full_counts[m->header.stamp.toNSec()] = m->width * m->height;
+      });
+  auto background_sub = nh.subscribe<sensor_msgs::PointCloud2>("/lidar_object_tracker/background", 30,
+      [&](const sensor_msgs::PointCloud2ConstPtr& m) { background_counts[m->header.stamp.toNSec()] = m->width * m->height; });
+  auto dynamic_count_sub = nh.subscribe<sensor_msgs::PointCloud2>("/lidar_object_tracker/dynamic", 30,
+      [&](const sensor_msgs::PointCloud2ConstPtr& m) { dynamic_counts[m->header.stamp.toNSec()] = m->width * m->height; });
   auto raw = nh.advertise<livox_ros_driver2::CustomMsg>("/migration/raw", 3);
   auto odom = nh.advertise<nav_msgs::Odometry>("/migration/pose", 30);
   auto spinFor = [](double seconds) {
@@ -84,6 +94,14 @@ TEST(Pipeline, RawScanThroughAdapterAndTracker) {
   bool moving = false;
   for (const auto& r : reports) {
     EXPECT_EQ("map", r["frame_id"].asString());
+    ASSERT_TRUE(r["stamp_ns"].isUInt64());
+    ASSERT_TRUE(r["session_id"].isString());
+    EXPECT_FALSE(r["session_id"].asString().empty());
+    uint64_t stamp_ns = r["stamp_ns"].asUInt64();
+    ASSERT_TRUE(full_counts.count(stamp_ns));
+    ASSERT_TRUE(background_counts.count(stamp_ns));
+    ASSERT_TRUE(dynamic_counts.count(stamp_ns));
+    EXPECT_EQ(full_counts.at(stamp_ns), background_counts.at(stamp_ns) + dynamic_counts.at(stamp_ns));
     for (const auto& o : r["objects"])
       moving = moving || o["state"].asString() == "MOVING";
   }

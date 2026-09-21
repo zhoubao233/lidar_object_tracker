@@ -4,7 +4,13 @@
 
 跟踪、适配器、离线评价和测试均为 C++；不依赖 NumPy、SciPy、rospy 或 M-detector 工程。
 ROS/catkin 自带构建、启动和测试工具仍可能使用系统 Python，这是 ROS 工具链自身的依赖。
-本项目尚未实现 KF、IMM、PredictedObstacleArray 或规划器接入。
+本项目尚未实现 KF、IMM 或规划器执行闭环。EGO 工程已新增独立旁路预测桥，进展与启动方式见 [接入实施计划](docs/EGO_INTEGRATION_IMPLEMENTATION_PLAN.md)。
+
+当前 EGO 统一入口使用 tracker 环境点云，并保留动态预测代价和候选碰撞检查；不增加预测超时保持或制动接管。启动方式与验证范围见 [环境点云统一接入](docs/STATIC_ENVIRONMENT_INTEGRATION.md)。
+
+剩余开发与验收顺序见 [动态避障剩余工作总计划](docs/REMAINING_DYNAMIC_AVOIDANCE_PLAN.md)（恢复版已复测正常，移动障碍待测试）。
+
+> 新统一入口现使用 tracker 环境点云和动态预测，不再需要单独启动 lidar2word.sh。见 [环境点云统一接入](docs/STATIC_ENVIRONMENT_INTEGRATION.md)。
 
 ## 效果演示
 
@@ -135,3 +141,24 @@ rosrun lidar_object_tracker evaluate_bag /路径/live.bag --recorded --output /t
 仍需验证纯原地旋转、紧贴或交叉目标、复杂遮挡、倾斜地面及真实飞行。
 缺少可靠地面时不做新的物体分类。历史结果见 docs/HISTORICAL_VALIDATION.md。
 来源和许可证范围见 NOTICE.md，原 LICENSE 保持原样。
+
+## 当前 Gazebo 场景与 EGO 旁路预测
+
+APS/Gazebo 的 `mission_auto_avoid` 场景使用 0.43 m 雷达高度：
+
+```bash
+./run.sh input_source:=mission_auto_avoid rviz:=true
+```
+
+此场景配置不会覆盖 `livox_mavros` 的旧默认外参，真机模式仍须显式传入外参。
+新增 `/lidar_object_tracker/full` 为同帧、未经动静筛除的 map 点云；它与 background、dynamic 共用时间戳。
+tracks JSON 新增精确整数 `stamp_ns` 和每次 tracker 进程启动生成的 `session_id`。
+
+若需同时启动 EGO 工程的预测桥，使用以下入口，替代上面的 tracker 单独启动命令：
+
+```bash
+bash ~/APS/EGO-Planner-v2/tools/start_tracker_shadow.sh rviz:=true
+```
+
+旁路输出为 `/tracker_prediction/predictions`、`/tracker_prediction/markers`、`/tracker_prediction/status`。
+默认仍为旁路。启用 EGO 外部预测消费者的新入口为 `start_singlepoint_tracker.sh`，详见 [M2 接入说明](docs/EGO_EXTERNAL_OBSTACLES.md)。该入口使用 full 点云建图，尚未做 background 分流；暂时保留原 `lidar2word.sh` 用于 RViz/TF 对照。

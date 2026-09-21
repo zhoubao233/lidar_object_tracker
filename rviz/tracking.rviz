@@ -52,11 +52,16 @@ Visualization Manager:
       Size (Pixels): 4
       Alpha: 1
       Decay Time: 0
-    # 框、ID、状态和速度箭头由 object_tracker.py/markers 生成。
+    # 框、ID、状态和速度箭头由 object_tracker/markers 生成。
     - Class: rviz/MarkerArray
       Name: Object IDs - state - speed
       Enabled: true
       Marker Topic: /lidar_object_tracker/markers
+      Queue Size: 1
+    - Class: rviz/MarkerArray
+      Name: EGO shadow predictions
+      Enabled: true
+      Marker Topic: /tracker_prediction/markers
       Queue Size: 1
   Tools:
     - Class: rviz/Interact

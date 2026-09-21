@@ -113,3 +113,13 @@ TEST(Deskew, ExplicitFiniteExtrinsic) {
   EXPECT_THROW(extrinsic({0, 0, 0}, {0, 0, 0, 0}), std::invalid_argument);
   EXPECT_THROW(extrinsic({NAN, 0, 0}, {0, 0, 0, 1}), std::invalid_argument);
 }
+
+TEST(Livox, EmptyReturnsRemainAnEmptyFrame) {
+  livox_ros_driver2::CustomMsg m; m.header.stamp=ros::Time(10); m.point_num=1;
+  m.points.resize(1);
+  auto c=convertLivox(m,Extrinsic(),"base_link",30000,.05);
+  EXPECT_EQ(c.width,0u); EXPECT_EQ(c.header.stamp,m.header.stamp);
+  m.points.clear();m.point_num=0;
+  EXPECT_EQ(convertLivox(m,Extrinsic(),"base_link",30000,.05).width,0u);
+  m.point_num=1;EXPECT_THROW(convertLivox(m,Extrinsic(),"base_link",30000,.05),std::invalid_argument);
+}

@@ -1,0 +1,18 @@
+<launch>
+  <!-- Current APS/Gazebo payload mount 0.38 m + sensor offset 0.05 m. -->
+  <arg name="rviz" default="true" />
+  <arg name="lidar_topic" default="/livox/lidar" />
+  <arg name="odom_topic" default="/mavros/local_position/odom" />
+  <arg name="world_frame" default="map" />
+  <arg name="body_frame" default="base_link" />
+  <include file="$(find lidar_object_tracker)/launch/simulation.launch">
+    <arg name="rviz" value="$(arg rviz)" />
+    <arg name="lidar_topic" value="$(arg lidar_topic)" />
+    <arg name="odom_topic" value="$(arg odom_topic)" />
+    <arg name="world_frame" value="$(arg world_frame)" />
+    <arg name="body_frame" value="$(arg body_frame)" />
+    <arg name="lidar_translation" value="[0.0, 0.0, 0.43]" />
+    <arg name="lidar_quaternion" value="[0.0, 0.0, 0.0, 1.0]" />
+  </include>
+  <param name="/lidar_object_tracker/tracking/allow_groundless" type="int" value="1" />
+</launch>

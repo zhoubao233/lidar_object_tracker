@@ -1,17 +1,22 @@
 # 独立物体跟踪参数：距离单位 m，时间单位 s，速度单位 m/s。
 # 这里只覆盖 tracking_core.py/DEFAULTS 中的一部分参数，修改后重启跟踪节点生效。
 # 算法不读取 Gazebo 模型真值。
+# allow_groundless 默认 0；mission_auto_avoid.launch 单独设为 1。
+# 无地面模式保留全部背景点，仅 full 点云地图可接入其降级预测。
 tracking:
   voxel_size: 0.10          # 局部体素均值点的间距。
   cluster_distance: 0.32    # 两个均值点的连边距离，过大容易合并邻近物体。
+  column_distance: 2.0      # 同一水平足迹内允许连通的竖直间隔；高目标侧面竖直采样稀疏，用它把上下碎片连成一根柱子。0 = 关闭。
   min_cluster_points: 18    # 一个候选簇至少包含的原始点数，不是体素数。
-  max_cluster_size: 5.0     # 候选簇可见包围框最长边上限。
-  max_range: 25.0           # 只分组观察者 body 原点周围此范围内的点。
+  max_cluster_size: 5.0     # 候选簇水平（x/y）包围框最长边上限；竖直方向不设限，只按高度丢簇会把整根高柱子丢掉。
+  max_range: 60.0           # 只分组观察者 body 原点周围此范围内的点。
   object_min_height: 0.13   # 体素均值点到拟合地面的法向距离下限，抑制贴地点。
   ground_distance: 0.10     # 拟合地面时判为平面内点的距离容差。
   moving_speed: 0.25        # 新运动证据所需最低估计速度，还须通过几何检查。
   static_speed: 0.12        # 静止证据的速度上限；与 moving_speed 留有不确定区间。
-  motion_window: 0.55       # 速度与表面对齐的观察窗口，代码额外容纳 0.11 s 采样间隔。
+  shape_horizontal_only: 1   # 运动证据/关联的形状判据只看水平尺寸；竖直可见范围波动不参与（否则高目标会被判 UNKNOWN）。0 = 旧行为。
+  motion_vertical_tolerance: 0.20 # 整个速度窗口内可见高度变化超过该值，说明只看到物体的一部分，纵向速度按 0 处理（避免把"看到的部分变多"读成上下飞）。0 = 不过滤。
+  motion_window: 0.55       # 速度与表面对齐的观察窗口，代码额外容纳 0.11 s 采样间隔。加长会让 anchor 帧更旧，反而把 MOVING 打成 UNKNOWN。
   min_observation_time: 0.4 # 观察时间至少达到该值，且窗口至少 4 帧，才判断状态。
   moving_confirm: 2        # 连续几次满足新运动证据，才进入 MOVING。
   static_confirm_seconds: 0.7 # 连续静止证据保持多久，才进入 STATIC。

@@ -1,3 +1,4 @@
+#include <sensor_msgs/point_cloud2_iterator.h>
 #include <std_msgs/String.h>
 
 #include <atomic>
@@ -12,8 +13,9 @@ class TrackerNode {
   ros::NodeHandle nh_, private_{"~"};
   ObjectTracker tracker_;
   std::string frame_;
+  const std::string session_id_ = std::to_string(ros::WallTime::now().toNSec());
   ros::Subscriber cloud_sub_, odom_sub_;
-  ros::Publisher dynamic_, background_, uncertain_, markers_, tracks_;
+  ros::Publisher dynamic_, background_, uncertain_, full_, classified_, markers_, tracks_;
   ros::WallTimer watchdog_;
   std::mutex mutex_;
   std::condition_variable cv_;
@@ -90,11 +92,26 @@ class TrackerNode {
           if (result.uncertain[i])
             uncertain.push_back(input.first[i]);
         }
+        full_.publish(cloudMessage(input.first, header));
+        auto classified = cloudMessage(input.first, header);
+        sensor_msgs::PointCloud2Modifier modifier(classified);
+        modifier.setPointCloud2Fields(4,"x",1,sensor_msgs::PointField::FLOAT32,
+            "y",1,sensor_msgs::PointField::FLOAT32,"z",1,sensor_msgs::PointField::FLOAT32,
+            "track_id",1,sensor_msgs::PointField::INT32);
+        modifier.resize(input.first.size());
+        sensor_msgs::PointCloud2Iterator<float> x(classified,"x"), y(classified,"y"), z(classified,"z");
+        sensor_msgs::PointCloud2Iterator<int32_t> id(classified,"track_id");
+        for (size_t i=0;i<input.first.size();++i,++x,++y,++z,++id) {
+          *x=input.first[i].x(); *y=input.first[i].y(); *z=input.first[i].z();
+          *id=result.moving_owner[i];
+        }
+        classified_.publish(classified);
         dynamic_.publish(cloudMessage(dynamic, header));
         background_.publish(cloudMessage(background, header));
         uncertain_.publish(cloudMessage(uncertain, header));
         markers_.publish(markers(result.objects, header));
         auto j = report(result, header);
+        j["session_id"] = session_id_;
         double age = (ros::Time::now() - header.stamp).toSec();
         j["input_age_seconds"] = age;
         j["processed"] = Json::UInt64(++processed_);
@@ -107,7 +124,8 @@ class TrackerNode {
                           result.objects.size(), result.processing_ms, age,
                           static_cast<unsigned long>(dropped_.load()));
         if (!result.ground_valid)
-          ROS_WARN_THROTTLE(5, "No reliable ground estimate: no new object classification.");
+          ROS_WARN_THROTTLE(5, "Ground unavailable: segmentation=%s (all points retained in background).",
+                            result.segmentation_mode.c_str());
       } catch (const std::exception& e) {
         ROS_WARN_THROTTLE(2, "Object tracker rejected frame: %s", e.what());
       }
@@ -121,6 +139,8 @@ class TrackerNode {
     private_.param<std::string>("cloud_topic", cloud_topic,
                                 "/lidar_object_tracker/input/cloud_body");
     private_.param<std::string>("odom_topic", odom_topic, "/lidar_object_tracker/input/odom");
+    classified_ = private_.advertise<sensor_msgs::PointCloud2>("classified", 1);
+    full_ = private_.advertise<sensor_msgs::PointCloud2>("full", 1);
     dynamic_ = private_.advertise<sensor_msgs::PointCloud2>("dynamic", 1);
     background_ = private_.advertise<sensor_msgs::PointCloud2>("background", 1);
     uncertain_ = private_.advertise<sensor_msgs::PointCloud2>("uncertain", 1);

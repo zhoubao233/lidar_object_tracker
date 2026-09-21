@@ -243,9 +243,12 @@ visualization_msgs::MarkerArray markers(const Json::Value& objects, const std_ms
 Json::Value report(const Result& r, const std_msgs::Header& h) {
   Json::Value j(Json::objectValue);
   j["stamp"] = h.stamp.toSec();
+  j["stamp_ns"] = Json::UInt64(h.stamp.toNSec());
   j["frame_id"] = h.frame_id;
   j["objects"] = r.objects;
   j["ground_valid"] = r.ground_valid;
+  j["segmentation_valid"] = r.segmentation_valid;
+  j["segmentation_mode"] = r.segmentation_mode;
   j["reset"] = r.reset;
   j["processing_ms"] = r.processing_ms;
   return j;

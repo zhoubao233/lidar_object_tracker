@@ -1,4 +1,6 @@
 <launch>
+  <arg name="world_frame" default="map" />
+  <arg name="body_frame" default="base_link" />
   <arg name="rviz" default="true" />
   <arg name="lidar_topic" default="/livox/lidar" />
   <arg name="odom_topic" default="/mavros/local_position/odom" />
@@ -8,6 +10,8 @@
   <arg name="config_file" default="$(find lidar_object_tracker)/config/tracking.yaml" />
   <arg name="max_dt" default="0.05" />
   <include file="$(find lidar_object_tracker)/launch/livox_mavros.launch">
+    <arg name="world_frame" value="$(arg world_frame)" />
+    <arg name="body_frame" value="$(arg body_frame)" />
     <arg name="lidar_topic" value="$(arg lidar_topic)" />
     <arg name="odom_topic" value="$(arg odom_topic)" />
     <arg name="lidar_translation" value="$(arg lidar_translation)" />
@@ -16,6 +20,7 @@
     <arg name="max_dt" value="$(arg max_dt)" />
   </include>
   <include file="$(find lidar_object_tracker)/launch/tracker.launch">
+    <arg name="world_frame" value="$(arg world_frame)" />
     <arg name="rviz" value="$(arg rviz)" />
     <arg name="config_file" value="$(arg config_file)" />
   </include>

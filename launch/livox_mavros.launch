@@ -1,4 +1,6 @@
 <launch>
+  <arg name="world_frame" default="map" />
+  <arg name="body_frame" default="base_link" />
   <arg name="max_dt" default="0.05" />
   <arg name="lidar_topic" default="/livox/lidar" />
   <arg name="odom_topic" default="/mavros/local_position/odom" />
@@ -10,8 +12,8 @@
       <param name="lidar_topic" value="$(arg lidar_topic)" />
       <param name="odom_topic" value="$(arg odom_topic)" />
       <param name="max_dt" value="$(arg max_dt)" />
-      <param name="world_frame" value="map" />
-      <param name="body_frame" value="base_link" />
+      <param name="world_frame" value="$(arg world_frame)" />
+      <param name="body_frame" value="$(arg body_frame)" />
       <rosparam param="lidar_translation" subst_value="true">$(arg lidar_translation)</rosparam>
       <rosparam param="lidar_quaternion" subst_value="true">$(arg lidar_quaternion)</rosparam>
       <param name="max_points" value="$(arg max_points)" />

@@ -192,3 +192,202 @@ int main(int argc, char** argv) {
   ros::Time::init();
   return RUN_ALL_TESTS();
 }
+
+TEST(Tracking, GroundlessTracksMotionAndRetainsAllMapPoints) {
+  ObjectTracker t({{"allow_groundless", 1}});
+  Result r;
+  for (int i=0;i<45;++i) {
+    auto cloud=scene(i*.06);
+    // Simulate ascent: ground returns disappear after initial acquisition.
+    if (i>=10) cloud.erase(cloud.begin(),cloud.begin()+1225);
+    r=t.process(cloud,Vec(0,0,.3+std::min(i,20)*.24),100+i*.1);
+    ASSERT_TRUE(r.segmentation_valid);
+    if (i>=20) {
+      EXPECT_FALSE(r.ground_valid);
+      EXPECT_EQ("unfiltered",r.segmentation_mode);
+      ASSERT_EQ(1u,r.objects.size());
+      EXPECT_EQ("MOVING",r.objects[0]["state"].asString());
+      EXPECT_NEAR(.6,r.objects[0]["speed"].asDouble(),.12);
+      EXPECT_EQ(0u,count(r.dynamic));
+      EXPECT_GT(std::count_if(r.moving_owner.begin(),r.moving_owner.end(),[](int32_t id){return id>0;}),0);
+      for(auto id:r.moving_owner) EXPECT_TRUE(id==0 || id==r.objects[0]["id"].asInt());
+    }
+  }
+  EXPECT_FALSE(t.process({},Vec(0,0,5.1),104.5).segmentation_valid);
+}
+TEST(Tracking, GroundlessColdStartStaticAndSparseInput) {
+  ObjectTracker t({{"allow_groundless",1}});
+  auto cloud=scene(); cloud.erase(cloud.begin(),cloud.begin()+1225);
+  Result r;
+  for(int i=0;i<30;++i) {
+    r=t.process(cloud,Vec(0,0,5),200+i*.1);
+    EXPECT_TRUE(r.segmentation_valid); EXPECT_FALSE(r.ground_valid);
+    EXPECT_EQ(0u,count(r.dynamic));
+  }
+  ASSERT_EQ(1u,r.objects.size()); EXPECT_EQ("STATIC",r.objects[0]["state"].asString());
+  EXPECT_FALSE(ObjectTracker().process(cloud,Vec(0,0,5),1).segmentation_valid);
+  EXPECT_TRUE(t.process({Vec(30,0,5)},Vec(0,0,5),203).segmentation_valid);
+  EXPECT_FALSE(t.process({Vec(NAN,NAN,NAN)},Vec(0,0,5),203.1).segmentation_valid);
+  EXPECT_THROW(ObjectTracker({{"allow_groundless",2}}),std::invalid_argument);
+}
+TEST(Tracking, GroundReturnsRestoreFiltering) {
+  ObjectTracker t({{"allow_groundless",1}});
+  auto cloud=scene(); cloud.erase(cloud.begin(),cloud.begin()+1225);
+  EXPECT_EQ("unfiltered",t.process(cloud,Vec(0,0,5),1).segmentation_mode);
+  auto r=t.process(scene(),Vec(0,0,5),1.1);
+  EXPECT_TRUE(r.ground_valid); EXPECT_EQ("ground_filtered",r.segmentation_mode);
+}
+namespace {
+// 地面 + 一根竖直柱体（宽 2*half_width，高到 height），z_step 控制竖直采样密度。
+Cloud tallColumn(double height,double z_step,double half_width=.5,double y_shift=0.){
+  Cloud p;
+  for(int j=0;j<35;++j)for(int i=0;i<35;++i)
+    p.emplace_back(-3.+12.*i/34.,-6.+12.*j/34.,0);
+  for(double z=.17;z<=height+1e-9;z+=z_step)
+    for(double y=-half_width;y<=half_width+1e-9;y+=.05)
+      p.emplace_back(4.5,y+y_shift,z);
+  return p;
+}
+}  // namespace
+
+// 20 m 高柱体的水平尺寸只有约 1 m：不能再因为"高"把整个簇丢掉。
+TEST(Tracking, TallObjectPassesHorizontalSizeGate) {
+  ObjectTracker t;
+  ASSERT_DOUBLE_EQ(5.,t.config().at("max_cluster_size"));  // 不需要为高度放宽该参数
+  auto r=t.process(tallColumn(20,.05),Vec(0,0,.3),1);
+  ASSERT_EQ(1u,r.objects.size());
+  EXPECT_GT(r.objects[0]["size"][2].asDouble(),18.);
+  EXPECT_LT(r.objects[0]["size"][1].asDouble(),2.);
+}
+
+// 竖直采样稀疏时同一根柱体被各向同性邻域切成多段；column_distance 把它们连回一个目标。
+TEST(Tracking, ColumnDistanceMergesVerticallySparseFragments) {
+  ObjectTracker off;
+  EXPECT_GT(off.process(tallColumn(20,.5),Vec(0,0,.3),1).objects.size(),10u);
+  ObjectTracker on({{"column_distance",2.}});
+  Result r;
+  for(int i=0;i<40;++i)
+    r=on.process(tallColumn(20,.5),Vec(0,0,.3),10+i*.1);
+  ASSERT_EQ(1u,r.objects.size());
+  EXPECT_GT(r.objects[0]["size"][2].asDouble(),18.);
+  EXPECT_LT(r.objects[0]["size"][2].asDouble(),21.);
+  EXPECT_GT(r.objects[0]["point_count"].asUInt64(),500u);
+}
+
+// 柱状邻域只放宽竖直方向：水平错开的两个物体不能被连成一个。
+TEST(Tracking, ColumnDistanceKeepsHorizontallySeparatedObjectsApart) {
+  ObjectTracker t({{"column_distance",2.}});
+  auto cloud=tallColumn(20,.5,.5),second=tallColumn(20,.5,.5,1.5);
+  cloud.insert(cloud.end(),second.begin()+1225,second.end());
+  auto r=t.process(cloud,Vec(0,0,.3),1);
+  ASSERT_EQ(2u,r.objects.size());
+  for(const auto& o:r.objects) EXPECT_GT(o["size"][2].asDouble(),18.);
+}
+
+namespace {
+// 地面 + 一个"两面箱"：正面法向沿 y（点密），侧面法向沿 x（点稀），侧面可整面消失/出现。
+Cloud twoFaceBox(double x0, bool side) {
+  Cloud p;
+  for (int j = 0; j < 35; ++j)
+    for (int i = 0; i < 35; ++i)
+      p.emplace_back(-3. + 12. * i / 34, -6. + 12. * j / 34, 0);
+  for (int j = 0; j < 24; ++j)
+    for (int i = 0; i < 24; ++i)
+      p.emplace_back(x0 - .5 + 1. * i / 23, 4.5, .17 + .83 * j / 23);
+  if (side)
+    for (int j = 0; j < 12; ++j)
+      for (int i = 0; i < 12; ++i)
+        p.emplace_back(x0 + .5, 4.5 + 1. * i / 11, .17 + .83 * j / 11);
+  return p;
+}
+}  // namespace
+
+// 物体只沿 x 平移，但侧面反复进出视野：包围盒中点会横向跳变，不能把它算成速度。
+TEST(Tracking, SideFaceFlickerDoesNotAddLateralVelocity) {
+  ObjectTracker t;
+  double worst_vy = 0, worst_jump = 0, speed = 0, last_cy = 0;
+  int n = 0;
+  for (int i = 0; i < 60; ++i) {
+    auto r = t.process(twoFaceBox(i * .08, ((i / 6) % 2) == 1), Vec(0, 0, .3), 40 + i * .1);
+    if (i < 10 || r.objects.empty())
+      continue;
+    const auto& o = r.objects[0];
+    double cy = o["center"][1].asDouble();
+    if (n)
+      worst_jump = std::max(worst_jump, std::abs(cy - last_cy));
+    last_cy = cy;
+    worst_vy = std::max(worst_vy, std::abs(o["velocity"][1].asDouble()));
+    speed += o["speed"].asDouble();
+    ++n;
+  }
+  ASSERT_GT(n, 30);
+  EXPECT_GT(worst_jump, .3);          // 侧面进出视野确实让包围盒中点横跳
+  EXPECT_LT(worst_vy, .2);            // 但报告的速度不跟着跳（旧实现这里是 2.5 m/s）
+  EXPECT_NEAR(.8, speed / n, .15);    // 真实平移仍被正确估计
+}
+
+namespace {
+// 地面 + 一根竖直面：沿 y 平移，同时可见高度在两个平台间切换（模拟只看到物体的一部分）。
+Cloud flickerBox(double y, double top) {
+  Cloud p;
+  for (int j = 0; j < 35; ++j)
+    for (int i = 0; i < 35; ++i)
+      p.emplace_back(-3. + 12. * i / 34, -6. + 12. * j / 34, 0);
+  for (int j = 0; j < 16; ++j)
+    for (int i = 0; i < 12; ++i)
+      p.emplace_back(4.5, -.5 + y + i / 11., .17 + (top - .17) * j / 15.);
+  return p;
+}
+}  // namespace
+
+// 可见高度来回切换时，簇质心的 z 会整体漂移；不能把它读成纵向速度（实测可造出 ±3 m/s）。
+TEST(Tracking, VisibleHeightFlickerDoesNotCreateVerticalVelocity) {
+  auto run = [](const Config& c, double& worst_vz, double& mean_vy) {
+    ObjectTracker t(c);
+    double mz = 0, sy = 0;
+    int n = 0;
+    for (int i = 0; i < 64; ++i) {
+      // 平台 + 每帧 0.5 m 的渐进过渡（和实测一致：单帧尺寸变化不能触发关联门限 shape<0.85）
+      int ph = i % 16;
+      double top = ph < 4 ? 2.0 : (ph < 8 ? 2.0 + .5 * (ph - 3) : (ph < 12 ? 4.0 : 4.0 - .5 * (ph - 11)));
+      auto r = t.process(flickerBox(i * .06, top), Vec(0, 0, .3), 60 + i * .1);
+      if (i < 12 || r.objects.empty())
+        continue;
+      const auto& o = r.objects[0];
+      mz = std::max(mz, std::abs(o["velocity"][2].asDouble()));
+      sy += o["velocity"][1].asDouble();
+      ++n;
+    }
+    worst_vz = mz;
+    mean_vy = sy / n;
+  };
+  double off_vz = 0, off_vy = 0, on_vz = 0, on_vy = 0;
+  run({}, off_vz, off_vy);
+  run({{"motion_vertical_tolerance", .3}}, on_vz, on_vy);
+  EXPECT_GT(off_vz, .8);            // 不过滤：可见高度切换造出纵向假速度
+  EXPECT_LT(on_vz, .25);            // 过滤后不再有
+  EXPECT_NEAR(.6, off_vy, .15);     // 真实平移（y 方向 0.6 m/s）仍被正确估计
+  EXPECT_NEAR(.6, on_vy, .15);
+}
+
+// 只看到物体的一部分（可见高度剧烈波动）时，形状判据若含竖直尺寸就会把 MOVING 判没。
+TEST(Tracking, HorizontalOnlyShapeKeepsTallObjectMoving) {
+  auto run = [](const Config& c) {
+    ObjectTracker t(c);
+    double moving = 0;
+    int n = 0;
+    for (int i = 0; i < 64; ++i) {
+      int ph = i % 16;
+      double top = ph < 4 ? 2.0 : (ph < 8 ? 2.0 + .5 * (ph - 3) : (ph < 12 ? 4.0 : 4.0 - .5 * (ph - 11)));
+      auto r = t.process(flickerBox(i * .06, top), Vec(0, 0, .3), 80 + i * .1);
+      if (i < 16) continue;
+      ++n;
+      if (!r.objects.empty() && r.objects[0]["state"].asString() == "MOVING") ++moving;
+    }
+    return moving / n;
+  };
+  const double old_ratio = run({});
+  const double new_ratio = run({{"shape_horizontal_only", 1}});
+  EXPECT_LT(old_ratio, .2);    // 旧行为：可见高度一变就掉成 UNKNOWN
+  EXPECT_GT(new_ratio, .7);    // 只用水平尺寸后能维持 MOVING
+}

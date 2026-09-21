@@ -35,10 +35,13 @@ struct Detection {
   std::vector<size_t> indices;
   Cloud points;
   Vec center = Vec::Zero(), size = Vec::Zero(), lower = Vec::Zero(), upper = Vec::Zero();
+  // 簇内原始点的质心。包围盒中点会随"看到哪几个面"整体平移，质心对这种可见性变化
+  // 敏感度低得多，因此速度估计用它，包围盒中点仍然用于关联和对外报告。
+  Vec centroid = Vec::Zero();
 };
 struct Observation {
   double stamp;
-  Vec center;
+  Vec center, centroid;
   Cloud points;
   Vec size;
 };
@@ -57,7 +60,10 @@ struct Track {
 struct Result {
   Json::Value objects = Json::Value(Json::arrayValue);
   std::vector<uint8_t> dynamic, uncertain;
+  std::vector<int32_t> moving_owner; // 0 = retain as environment; otherwise observed MOVING track ID
   bool ground_valid = false, reset = false;
+  bool segmentation_valid = false;
+  std::string segmentation_mode = "unavailable";
   double processing_ms = 0;
 };
 // World-space input; this class neither uses ROS nor reads simulator ground truth.
@@ -77,7 +83,7 @@ class ObjectTracker {
   Vec ground_normal_ = Vec::UnitZ(), previous_origin_ = Vec::Zero();
   double ground_offset_ = 0, ground_stamp_, previous_stamp_;
   bool estimateGround(const Cloud&, const Vec&, double);
-  std::pair<std::vector<Detection>, bool> segment(const Cloud&, const Vec&, double);
+  std::pair<std::vector<Detection>, bool> segment(const Cloud&, const Vec&, double, Result&);
   void update(Track&, const Detection&, double);
 };
 }  // namespace lot

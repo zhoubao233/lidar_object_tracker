@@ -11,6 +11,13 @@ class Adapter {
   std::string world_, body_, lidar_frame_;
   double slop_, duration_, gap_, wait_, age_, min_range_;
   int max_points_;
+  double max_range_, self_x_, self_y_, self_z_;
+  bool self_filter_;
+  bool keep(const Vec& raw) const {
+    const Vec body=extrinsic_.rotation*raw+extrinsic_.translation;
+    return raw.allFinite() && raw.norm()>min_range_ && raw.norm()<=max_range_ &&
+      !(self_filter_ && std::abs(body.x())<=self_x_ && std::abs(body.y())<=self_y_ && std::abs(body.z())<=self_z_);
+  }
   int64_t offset_ = 0;
   ros::Subscriber scan_sub_, odom_sub_;
   ros::Publisher cloud_pub_, odom_pub_;
@@ -53,7 +60,15 @@ class Adapter {
     ++scans_;
     try {
       if (!real_) {
-        sim_clouds_.push_back(convertLivox(*m, extrinsic_, body_, max_points_, min_range_));
+        if (m->point_num!=m->points.size() || m->points.size()>size_t(max_points_))
+          throw std::invalid_argument("point count mismatch or max_points exceeded");
+        auto filtered=*m; filtered.points.clear();
+        for (const auto& point:m->points) {
+          if (point.offset_time) throw std::invalid_argument("simulation requires instantaneous scans");
+          if (keep(Vec(point.x,point.y,point.z))) filtered.points.push_back(point);
+        }
+        filtered.point_num=filtered.points.size();
+        sim_clouds_.push_back(convertLivox(filtered, extrinsic_, body_, max_points_, 0.));
         while (sim_clouds_.size() > 60)
           sim_clouds_.pop_front();
         pairSimulation();
@@ -150,14 +165,13 @@ class Adapter {
     std::vector<bool> valid;
     for (const auto& p : pending.scan->points) {
       Vec v(p.x, p.y, p.z);
-      valid.push_back(v.allFinite() && v.norm() > min_range_);
+      valid.push_back(keep(v));
       for (int i = 0; i < 3; ++i)
         if (!std::isfinite(v[i]))
           v[i] = 0;
       xyz.push_back(v);
     }
-    if (std::none_of(valid.begin(), valid.end(), [](bool x) { return x; }))
-      throw std::invalid_argument("scan has no valid returns");
+
     auto result = deskew(xyz, pending.times, samples, extrinsic_, gap_);
     if (result.stamp <= last_output_)
       throw std::invalid_argument("non-monotonic output timestamp");
@@ -215,6 +229,14 @@ class Adapter {
     p_.param("max_wait", wait_, .5);
     p_.param("max_input_age", age_, 1.);
     p_.param("min_range", min_range_, .3);
+    p_.param("max_range", max_range_, 80.);
+    p_.param("self_filter_enabled", self_filter_, false);
+    p_.param("self_filter_x", self_x_, 1.45);
+    p_.param("self_filter_y", self_y_, 1.45);
+    p_.param("self_filter_z", self_z_, .9);
+    if (!std::isfinite(max_range_) || max_range_<=min_range_ ||
+        !std::isfinite(self_x_) || self_x_<=0 || !std::isfinite(self_y_) || self_y_<=0 ||
+        !std::isfinite(self_z_) || self_z_<=0) throw std::invalid_argument("invalid point filter");
     p_.param("max_points", max_points_, 30000);
     double offset;
     p_.param("lidar_time_offset", offset, 0.);

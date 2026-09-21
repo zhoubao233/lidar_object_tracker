@@ -1,4 +1,6 @@
 <launch>
+  <arg name="world_frame" default="map" />
+  <arg name="body_frame" default="base_link" />
   <arg name="max_scan_duration" default="0.15" />
   <arg name="max_odom_gap" default="0.1" />
   <arg name="max_wait" default="0.5" />
@@ -21,8 +23,8 @@
       <param name="lidar_time_offset" value="$(arg lidar_time_offset)" />
       <param name="lidar_frame" value="$(arg lidar_frame)" />
       <param name="max_points" value="$(arg max_points)" />
-      <param name="world_frame" value="map" />
-      <param name="body_frame" value="base_link" />
+      <param name="world_frame" value="$(arg world_frame)" />
+      <param name="body_frame" value="$(arg body_frame)" />
       <rosparam param="lidar_translation" subst_value="true">$(arg lidar_translation)</rosparam>
       <rosparam param="lidar_quaternion" subst_value="true">$(arg lidar_quaternion)</rosparam>
     </node>
